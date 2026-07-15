@@ -8,7 +8,7 @@
 
 **[English version](README.md)**
 
-Zeig dini **JBD/Jiabaida/Xiaoxiang BMS**-Akku-Date im **Victron VenusOS** a — ohni tüüre SmartShunt. Dä ESP32 liist dä Akku über Bluetooth uus und schickt d'Wärt per MQTT a Cerbo GX.
+Zeigen Sie Ihren **JBD/Jiabaida/Xiaoxiang BMS**-Akku im **Victron VenusOS** an — ohne teuren SmartShunt. Der ESP32 liest den Akku via Bluetooth aus und sendet die Werte per MQTT an den Cerbo GX.
 
 ## Architektur
 
@@ -32,42 +32,42 @@ Zeig dini **JBD/Jiabaida/Xiaoxiang BMS**-Akku-Date im **Victron VenusOS** a — 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Dä Datewäg:**
-1. **ESP32** list dä JBD BMS über BLE uus (Service 0xFF00, Protokoll us [aiobmsble](https://github.com/patman15/aiobmsble) rückentwicklet)
-2. **ESP32** schickt d'Wärt als JSON per **MQTT**
-3. **Cerbo GX** lauft en Python-Daemon, wo MQTT abonniert und a Victrons **D-Bus** witergit
-4. **Victron VenusOS** zeigt dä Akku wie en normale Batterii a — Spannig, SoC, Strom, Temperatur
-5. **Node-RED** (optional) für Dashboard, Debugging, InfluxDB
+**Der Datenweg:**
+1. **ESP32** liest den JBD BMS via BLE aus (Service 0xFF00, Protokoll aus [aiobmsble](https://github.com/patman15/aiobmsble) reverse-engineered)
+2. **ESP32** publiziert die Werte als JSON via **MQTT**
+3. **Cerbo GX** startet einen Python-Daemon, der MQTT abonniert und an Victrons **D-Bus** weiterleitet
+4. **Victron VenusOS** zeigt den Akku als native Batterie an — Spannung, SoC, Strom, Temperatur inklusive
+5. **Node-RED** (optional) für Dashboards, Debugging, InfluxDB
 
 ## Features
 
-- ✅ **JBD BLE-Protokoll** — Spannig, Strom, SoC, Temperatur, Zälle-Spannige
-- ✅ **ESP32 mit NimBLE** — stabil und sparsam, besser als Standard-BLE
-- ✅ **VenusOS D-Bus** — Akku wird wie jede Victron-Batterii azeigt
-- ✅ **MQTT** — flexibel, kei proprietäri Protokoll
-- ✅ **Node-RED Flow** — Debug und Dashboard integriert
-- ✅ **Watchdog** — merks wenn d'BLE-Verbindig abbricht, setzt "offline"
-- ✅ **CI** — GitHub Actions prüeft Syntax und Struktur
+- ✅ **JBD BLE-Protokoll** — Spannung, Strom, SoC, Temperatur, Zellspannungen
+- ✅ **ESP32 mit NimBLE** — stabil und speicherschonend, besser als Standard-BLE
+- ✅ **VenusOS D-Bus** — Akku erscheint wie jede Victron-Batterie
+- ✅ **MQTT** — flexible Anbindung, keine proprietären Protokolle
+- ✅ **Node-RED Flow** — Debug und Dashboard inklusive
+- ✅ **Watchdog** — erkennt BLE-Verbindungsabbruch, setzt "offline"
+- ✅ **CI** — GitHub Actions prüft Syntax und Struktur
 
 ## Schnellstart
 
-### 1. ESP32 flashe
+### 1. ESP32 flashen
 
 ```bash
 cd esp32_jbd_ble_mqtt/
 
-# WLAN + MQTT konfiguriere
-sed -i '' 's/WIFI_SSID.*/WIFI_SSID = "DysWLAN"/' esp32_jbd_ble_mqtt.ino
-sed -i '' 's/WIFI_PASS.*/WIFI_PASS = "DysPasswort"/' esp32_jbd_ble_mqtt.ino
+# WLAN + MQTT konfigurieren
+sed -i '' 's/WIFI_SSID.*/WIFI_SSID = "IhrWLAN"/' esp32_jbd_ble_mqtt.ino
+sed -i '' 's/WIFI_PASS.*/WIFI_PASS = "IhrPasswort"/' esp32_jbd_ble_mqtt.ino
 sed -i '' 's/MQTT_HOST.*/MQTT_HOST = "192.168.1.100"/' esp32_jbd_ble_mqtt.ino
 
 # Build + Upload (PlatformIO)
 pio run -t upload
 ```
 
-> **Kei PlatformIO?** Arduino IDE ufmache → `.ino` öffne → Libraries installiere (NimBLE, PubSubClient, ArduinoJson) → Upload.
+> **Kein PlatformIO?** Arduino IDE öffnen → `.ino` öffnen → Libraries installieren (NimBLE, PubSubClient, ArduinoJson) → Upload.
 
-### 2. VenusOS Daemon installiere
+### 2. VenusOS Daemon installieren
 
 ```bash
 ssh root@<cerbo-ip>
@@ -77,18 +77,18 @@ cd jbd-ble-victron-bridge-main/venusos
 ./install.sh
 ```
 
-**Oder vo Hand:**
+**Oder manuell:**
 ```bash
 scp -r venusos/* root@<cerbo-ip>:/data/dbus-mqtt-battery/
 ssh root@<cerbo-ip>
 /data/dbus-mqtt-battery/install.sh
 ```
 
-### 3. Node-RED Flow importiere (optional)
+### 3. Node-RED Flow importieren (optional)
 
-1. Uf em Cerbo GX: VenusOS App Store → **Node-RED** installiere
-2. `flows.json` importiere → Menü → Import
-3. MQTT-Broker-Konfiguration aapasse
+1. Auf dem Cerbo GX: VenusOS App Store → **Node-RED** installieren
+2. `flows.json` importieren → Menü → Import
+3. MQTT-Broker-Konfiguration anpassen
 4. Deploy
 
 ## Konfiguration
@@ -103,7 +103,7 @@ const int   MQTT_PORT     = 1883;
 const char* JBD_DEVICE_NAME = "";                 // leer = Auto-Scan
 ```
 
-> `JBD_DEVICE_NAME` leer la = ESP scannt automatisch nach Gäret mit Name wie `JBD-*`, `DWF*`, `SX1*`, `SBL*`.
+> `JBD_DEVICE_NAME` leer lassen = ESP scannt automatisch nach Geräten mit Namen wie `JBD-*`, `DWF*`, `SX1*`, `SBL*`.
 
 ### VenusOS Daemon (`venusos/dbus_mqtt_battery.service`)
 
@@ -114,7 +114,7 @@ Environment=DBUS_INSTANCE=256
 Environment=POLL_TIMEOUT=60
 ```
 
-## MQTT-Dateformat
+## MQTT-Datenformat
 
 Topic: `bms/jbd/data`
 
@@ -137,27 +137,27 @@ Topic: `bms/jbd/data`
 }
 ```
 
-## VenusOS / D-Bus Pfad
+## VenusOS / D-Bus Pfade
 
-| D-Bus Pfad | Beschribig | Einheit |
+| D-Bus Pfad | Beschreibung | Einheit |
 |-----------|-------------|--------|
-| `/Dc/0/Voltage` | Batteriispannig | V |
-| `/Dc/0/Current` | Strom (positiv = lade) | A |
-| `/Dc/0/Power` | Leistig | W |
+| `/Dc/0/Voltage` | Batteriespannung | V |
+| `/Dc/0/Current` | Strom (positiv = laden) | A |
+| `/Dc/0/Power` | Leistung | W |
 | `/Dc/0/Temperature` | Temperatur | °C |
-| `/Soc` | Ladezuestand | % |
+| `/Soc` | Ladezustand | % |
 | `/Capacity` | Nennkapazität | Ah |
-| `/ConsumedAmphours` | Verbruchti Amperesunde | Ah |
-| `/History/DischargeCycles` | Ladezykle | # |
+| `/ConsumedAmphours` | Verbrauchte Amperestunden | Ah |
+| `/History/DischargeCycles` | Ladezyklen | # |
 | `/Info/MaxChargeCurrent` | Max. Ladestrom | A |
 | `/Info/MaxDischargeCurrent` | Max. Entladestrom | A |
-| `/Connected` | Verbindigsstatus | 0/1 |
+| `/Connected` | Verbindungsstatus | 0/1 |
 
-## JBD BLE-Protokoll (Rückentwicklet)
+## JBD BLE-Protokoll (Reverse Engineering)
 
-Basieret uf [aiobmsble](https://github.com/patman15/aiobmsble) vom patman15.
+Basiert auf [aiobmsble](https://github.com/patman15/aiobmsble) von patman15.
 
-| Parameter | Wärt |
+| Parameter | Wert |
 |-----------|------|
 | Service UUID | `0000ff00-0000-1000-8000-00805f9b34fb` |
 | RX Char (Notify) | `ff01` |
@@ -178,23 +178,25 @@ jbd-ble-victron-bridge/
 ├── venusos/                   ← Cerbo GX / VenusOS
 │   ├── dbus_mqtt_battery.py      ← D-Bus Daemon (Python)
 │   ├── dbus_mqtt_battery.service ← systemd Service Unit
-│   └── install.sh                ← Installationsscript
+│   └── install.sh                ← Installationsskript
 ├── flows.json                 ← Node-RED Flow (importierbar)
 ├── .github/workflows/         ← GitHub Actions CI
 ├── LICENSE                    ← MIT
-├── README.md                  ← Englisch
-└── README.de.md               ← Deutsch (Schwiizer Hochdütsch)
-## Fehlersuechi
+├── README.md                  ← English
+└── README.de.md               ← Deutsch (Schweizer Standardsprache)
+```
 
-**ESP32 findet kei JBD BMS:**
-- BMS-App uf em Handy zumache (nume ei Verbindig gliichzitig)
-- `JBD_DEVICE_NAME` leer la (Auto-Scan)
-- RSSI prüefe — ESP32 nöch am Akku platziere
-- Mangi Klone händ abwiichendi Service-UUIDs — prüef ob `ff00` stimmt
+## Fehlersuche
 
-**Kei Date uf em Cerbo:**
+**ESP32 findet kein JBD BMS:**
+- BMS-App auf dem Handy schliessen (nur eine Verbindung gleichzeitig)
+- `JBD_DEVICE_NAME` leer lassen (Auto-Scan)
+- RSSI prüfen — ESP32 nahe am Akku platzieren
+- Service UUID `ff00` prüfen (manchen Klone nutzen abweichende UUIDs)
+
+**Keine Daten auf dem Cerbo:**
 ```bash
-# MQTT prüefe
+# MQTT prüfen
 mosquitto_sub -h localhost -t bms/jbd/data
 
 # Service-Status
@@ -204,18 +206,18 @@ systemctl status dbus-mqtt-battery
 journalctl -u dbus-mqtt-battery -n 50 --no-pager
 ```
 
-**Akku tuucht nöd i VenusOS uf:**
-- Service neu starte: `systemctl restart dbus-mqtt-battery`
-- Instance-ID ändere falls belegt: `DBUS_INSTANCE=257`
-- VenusOS Remote Console → Gerät → Nach neue Gerät sueche
+**Akku erscheint nicht in VenusOS:**
+- Service neu starten: `systemctl restart dbus-mqtt-battery`
+- Instance-ID ändern falls belegt: `DBUS_INSTANCE=257`
+- VenusOS Remote Console → Geräte → Nach neuen Geräten suchen
 
-## Verwändti Projekt
+## Verwandte Projekte
 
-- [aiobmsble](https://github.com/patman15/aiobmsble) — Python BLE BMS Library (d'Basis)
+- [aiobmsble](https://github.com/patman15/aiobmsble) — Python BLE BMS Library (unsere Basis)
 - [BMS_BLE-HA](https://github.com/patman15/BMS_BLE-HA) — Home Assistant Integration
 - [dbus-serialbattery](https://github.com/mr-manuel/venus-os_dbus-serialbattery) — VenusOS Serial Battery Driver
 - [velib_python](https://github.com/victronenergy/velib_python) — Victron D-Bus Python Bindings
 
 ## Lizenz
 
-MIT — mach demit was du wotsch, aber kei Garantie. Lueg [LICENSE](LICENSE).
+MIT — machen Sie damit, was Sie wollen, aber ohne Garantie. Siehe [LICENSE](LICENSE).
