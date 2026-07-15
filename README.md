@@ -211,6 +211,21 @@ journalctl -u dbus-mqtt-battery -n 50 --no-pager
 - Change instance ID if taken: `DBUS_INSTANCE=257`
 - VenusOS Remote Console → Devices → Scan for new devices
 
+## Why Not a Pure Node-RED Solution?
+
+[`@victronenergy/node-red-contrib-victron`](https://flows.nodered.org/node/@victronenergy/node-red-contrib-victron) provides official Victron nodes for Node-RED — but they can only **read from or write to existing D-Bus services**. There is no node that can **register a new virtual battery device** on D-Bus.
+
+| Task | Node-RED alone |
+|------|---------------|
+| Subscribe to MQTT from ESP32 | ✅ Yes |
+| Dashboard / visualisation | ✅ Yes |
+| InfluxDB / Grafana logging | ✅ Yes |
+| Alerts and automations | ✅ Yes |
+| Write to *existing* VenusOS services | ✅ Yes (via `victron-output` nodes) |
+| **Create a new virtual battery in VenusOS** | ❌ No — requires Python + D-Bus |
+
+The Python daemon (`dbus_mqtt_battery.py`) is the only way to register a new `com.victronenergy.battery.*` service so VenusOS recognises the JBD BMS as a native battery. Node-RED remains an optional addition for dashboards and logging, but it cannot replace the daemon.
+
 ## Related Projects
 
 - [aiobmsble](https://github.com/patman15/aiobmsble) — Python BLE BMS library (our foundation)
