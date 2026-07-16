@@ -112,7 +112,30 @@ Environment=MQTT_HOST=192.168.1.100
 Environment=MQTT_TOPIC=bms/jbd/data
 Environment=DBUS_INSTANCE=256
 Environment=POLL_TIMEOUT=60
+# Set to 1 if a Victron SmartShunt is present (see below)
+Environment=SMARTSHUNT_MODE=0
 ```
+
+## SmartShunt Coexistence
+
+If a **Victron SmartShunt** is already installed, it should remain the primary battery monitor — its Coulomb-counting SoC is far more accurate than the JBD BMS voltage-based estimate.
+
+Set `SMARTSHUNT_MODE=1` in the service unit. In this mode the daemon skips SoC, capacity and energy-accounting paths (those stay with the SmartShunt) and only publishes JBD-specific data that the SmartShunt cannot provide:
+
+| What | SmartShunt | JBD BMS daemon (`SMARTSHUNT_MODE=1`) |
+|------|-----------|--------------------------------------|
+| SoC (Coulomb-counting) | ✅ primary | skipped |
+| Voltage / Current / Power | ✅ | ✅ (cross-check) |
+| Individual cell voltages | ❌ | ✅ `/Voltages/Cell1..N` |
+| Cell voltage spread (Diff) | ❌ | ✅ `/Voltages/Diff` |
+| Allow-to-charge/discharge | ❌ | ✅ `/Io/AllowToCharge` |
+| BMS temperatures | ✅ (1 sensor) | ✅ (all BMS sensors) |
+| Charge cycles | ✅ | ✅ |
+
+**After enabling SmartShunt mode:**
+1. Set `SMARTSHUNT_MODE=1` in `/data/dbus-mqtt-battery/dbus_mqtt_battery.service`
+2. `systemctl restart dbus-mqtt-battery`
+3. In VenusOS: **Settings → System Setup → Battery Monitor → SmartShunt**
 
 ## MQTT Data Format
 
@@ -139,19 +162,26 @@ Topic: `bms/jbd/data`
 
 ## VenusOS / D-Bus Paths
 
-| D-Bus Path | Description | Unit |
-|-----------|-------------|------|
-| `/Dc/0/Voltage` | Battery voltage | V |
-| `/Dc/0/Current` | Current (positive = charging) | A |
-| `/Dc/0/Power` | Power | W |
-| `/Dc/0/Temperature` | Temperature | °C |
-| `/Soc` | State of charge | % |
-| `/Capacity` | Rated capacity | Ah |
-| `/ConsumedAmphours` | Consumed amphours | Ah |
-| `/History/DischargeCycles` | Charge cycles | # |
-| `/Info/MaxChargeCurrent` | Max charge current | A |
-| `/Info/MaxDischargeCurrent` | Max discharge current | A |
-| `/Connected` | Connection state | 0/1 |
+| D-Bus Path | Description | Unit | SmartShunt mode |
+|-----------|-------------|------|----------------|
+| `/Dc/0/Voltage` | Battery voltage | V | ✅ always |
+| `/Dc/0/Current` | Current (positive = charging) | A | ✅ always |
+| `/Dc/0/Power` | Power | W | ✅ always |
+| `/Dc/0/Temperature` | Temperature | °C | ✅ always |
+| `/Soc` | State of charge | % | ⏭ skipped |
+| `/Capacity` | Rated capacity | Ah | ⏭ skipped |
+| `/ConsumedAmphours` | Consumed amphours | Ah | ⏭ skipped |
+| `/History/DischargeCycles` | Charge cycles | # | ✅ always |
+| `/Info/MaxChargeCurrent` | Max charge current | A | ⏭ skipped |
+| `/Info/MaxDischargeCurrent` | Max discharge current | A | ⏭ skipped |
+| `/Io/AllowToCharge` | BMS allows charging | 0/1 | ✅ always |
+| `/Io/AllowToDischarge` | BMS allows discharging | 0/1 | ✅ always |
+| `/Voltages/Cell1..N` | Individual cell voltages | V | ✅ always |
+| `/Voltages/Sum` | Sum of all cell voltages | V | ✅ always |
+| `/Voltages/Min` | Minimum cell voltage | V | ✅ always |
+| `/Voltages/Max` | Maximum cell voltage | V | ✅ always |
+| `/Voltages/Diff` | Cell voltage spread (max−min) | V | ✅ always |
+| `/Connected` | Connection state | 0/1 | ✅ always |
 
 ## JBD BLE Protocol (Reverse Engineered)
 
@@ -210,6 +240,21 @@ journalctl -u dbus-mqtt-battery -n 50 --no-pager
 - Restart service: `systemctl restart dbus-mqtt-battery`
 - Change instance ID if taken: `DBUS_INSTANCE=257`
 - VenusOS Remote Console → Devices → Scan for new devices
+
+## Why Not a Pure Node-RED Solution?
+
+[`@victronenergy/node-red-contrib-victron`](https://flows.nodered.org/node/@victronenergy/node-red-contrib-victron) provides official Victron nodes for Node-RED — but they can only **read from or write to existing D-Bus services**. There is no node that can **register a new virtual battery device** on D-Bus.
+
+| Task | Node-RED alone |
+|------|---------------|
+| Subscribe to MQTT from ESP32 | ✅ Yes |
+| Dashboard / visualisation | ✅ Yes |
+| InfluxDB / Grafana logging | ✅ Yes |
+| Alerts and automations | ✅ Yes |
+| Write to *existing* VenusOS services | ✅ Yes (via `victron-output` nodes) |
+| **Create a new virtual battery in VenusOS** | ❌ No — requires Python + D-Bus |
+
+The Python daemon (`dbus_mqtt_battery.py`) is the only way to register a new `com.victronenergy.battery.*` service so VenusOS recognises the JBD BMS as a native battery. Node-RED remains an optional addition for dashboards and logging, but it cannot replace the daemon.
 
 ## Related Projects
 
