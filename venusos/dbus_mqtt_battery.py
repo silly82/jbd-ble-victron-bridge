@@ -12,6 +12,12 @@ Installation auf Cerbo GX:
   cp dbus_mqtt_battery.py /data/dbus-mqtt-battery/
   cp dbus_mqtt_battery.service /data/etc/systemd/system/
   systemctl enable dbus-mqtt-battery && systemctl start dbus-mqtt-battery
+
+SmartShunt-Modus (SMARTSHUNT_MODE=1):
+  Wenn ein SmartShunt vorhanden ist, übernimmt dieser SoC, Kapazität
+  und Energiebilanz. Dieser Daemon liefert dann nur noch die JBD-spezifischen
+  Daten: Einzelzellspannungen, BMS-Schutzstatus und Temperaturen.
+  → VenusOS Einstellungen → System-Setup → Batteriemonitor: SmartShunt wählen.
 """
 
 import json
@@ -35,6 +41,10 @@ MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "bms/jbd/data")
 DBUS_SERVICE = os.environ.get("DBUS_SERVICE", "com.victronenergy.battery")
 DBUS_INSTANCE = int(os.environ.get("DBUS_INSTANCE", "256"))
 POLL_TIMEOUT = int(os.environ.get("POLL_TIMEOUT", "60"))  # Sekunden bis "offline"
+
+# SmartShunt-Modus: SoC/Kapazität/Energiebilanz dem SmartShunt überlassen.
+# Dieser Daemon liefert dann nur Zelldaten, BMS-Status und Temperaturen.
+SMARTSHUNT_MODE = os.environ.get("SMARTSHUNT_MODE", "0").strip() in ("1", "true", "yes")
 
 # --- Logging ---
 logging.basicConfig(
@@ -76,7 +86,7 @@ class DBusMqttBattery:
             "/Dc/0/Power": {"initial": 0.0},
             "/Dc/0/Temperature": {"initial": None},
 
-            # SoC + Capacity
+            # SoC + Capacity (im SmartShunt-Modus nur als Spiegel, nicht primär)
             "/Soc": {"initial": 0.0},
             "/Capacity": {"initial": 0.0},
             "/ConsumedAmphours": {"initial": 0.0},
@@ -88,6 +98,17 @@ class DBusMqttBattery:
             "/Info/MaxChargeCurrent": {"initial": 0.0},
             "/Info/MaxDischargeCurrent": {"initial": 0.0},
 
+            # BMS-Schutzstatus (JBD-spezifisch)
+            "/Io/AllowToCharge": {"initial": 1},
+            "/Io/AllowToDischarge": {"initial": 1},
+            "/Balancing": {"initial": 0},
+
+            # Zellspannungen (werden dynamisch ergänzt, max. 32 Zellen)
+            "/Voltages/Sum": {"initial": 0.0},
+            "/Voltages/Diff": {"initial": 0.0},
+            "/Voltages/Min": {"initial": 0.0},
+            "/Voltages/Max": {"initial": 0.0},
+
             # Device info
             "/Mgmt/ProductName": {"initial": "JBD smart BMS (BLE Bridge)"},
             "/Mgmt/Connection": {"initial": "MQTT"},
@@ -98,6 +119,10 @@ class DBusMqttBattery:
             "/AutoSelected": {"initial": 1},
         }
 
+        # Zellspannungspfade vorregistrieren (bis zu 32 Zellen)
+        for i in range(1, 33):
+            paths[f"/Voltages/Cell{i}"] = {"initial": None}
+
         for path, config in paths.items():
             VeBusItem(
                 self._dbus_service,
@@ -105,7 +130,8 @@ class DBusMqttBattery:
                 config.get("initial", None)
             )
 
-        log.info(f"D-Bus Service '{service_name}' gestartet")
+        mode_info = " [SmartShunt-Modus: SoC/Kap. vom SmartShunt]" if SMARTSHUNT_MODE else ""
+        log.info(f"D-Bus Service '{service_name}' gestartet{mode_info}")
 
     def _setup_mqtt(self):
         """MQTT-Client initialisieren."""
@@ -163,32 +189,48 @@ class DBusMqttBattery:
         if temps:
             self._set_value("/Dc/0/Temperature", float(temps[0]))
 
-        # SoC / Capacity
-        self._set_value("/Soc", min(soc, 100.0))
-        if capacity > 0:
-            self._set_value("/Capacity", float(capacity))
-            consumed = max(0, capacity * (100 - soc) / 100)
-            self._set_value("/ConsumedAmphours", consumed)
+        # SoC / Capacity — im SmartShunt-Modus übernimmt der SmartShunt diese Werte.
+        # Der Daemon schreibt sie trotzdem (für Geräteübersicht), aber VenusOS nutzt
+        # den als Hauptmonitor konfigurierten SmartShunt für die Systemanzeige.
+        if not SMARTSHUNT_MODE:
+            self._set_value("/Soc", min(soc, 100.0))
+            if capacity > 0:
+                self._set_value("/Capacity", float(capacity))
+                consumed = max(0, capacity * (100 - soc) / 100)
+                self._set_value("/ConsumedAmphours", consumed)
+                self._set_value("/Info/MaxChargeCurrent", capacity * 0.5)
+                self._set_value("/Info/MaxDischargeCurrent", capacity * 0.5)
 
-        # Info
-        data_charge_current = data.get("max_charge_current",
-                                        data.get("max_charge_voltage", 0))
-        data_discharge_current = data.get("max_discharge_current",
-                                           data.get("max_discharge_voltage", 0))
-
-        if capacity > 0:
-            self._set_value("/Info/MaxChargeCurrent", capacity * 0.5)
-            self._set_value("/Info/MaxDischargeCurrent", capacity * 0.5)
-
-        # Zyklen
+        # Zyklen (immer schreiben — SmartShunt zählt diese nicht)
         cycles = data.get("cycles", 0)
         if cycles:
             self._set_value("/History/DischargeCycles", int(cycles))
 
+        # BMS-Schutzstatus (JBD-spezifisch — SmartShunt kennt diese nicht)
+        chrg_mosfet = data.get("chrg_mosfet", True)
+        dischrg_mosfet = data.get("dischrg_mosfet", True)
+        self._set_value("/Io/AllowToCharge", 1 if chrg_mosfet else 0)
+        self._set_value("/Io/AllowToDischarge", 1 if dischrg_mosfet else 0)
+
+        # Einzelzellspannungen (JBD-spezifisch — SmartShunt kennt diese nicht)
+        cell_voltages = data.get("cell_voltages", [])
+        if cell_voltages:
+            cv_floats = [float(v) for v in cell_voltages[:32]]
+            for i, cv in enumerate(cv_floats, start=1):
+                self._set_value(f"/Voltages/Cell{i}", cv)
+
+            min_v = min(cv_floats)
+            max_v = max(cv_floats)
+            self._set_value("/Voltages/Sum", sum(cv_floats))
+            self._set_value("/Voltages/Min", min_v)
+            self._set_value("/Voltages/Max", max_v)
+            self._set_value("/Voltages/Diff", max_v - min_v)
+
         # Verbindung aktiv halten
         self._set_value("/Connected", 1)
 
-        log.debug(f"DBus Update: {voltage:.2f}V, {current:.2f}A, {soc:.0f}%")
+        log.debug(f"DBus Update: {voltage:.2f}V, {current:.2f}A, {soc:.0f}%"
+                  + (f", {len(cell_voltages)} Zellen" if cell_voltages else ""))
 
     def _set_value(self, path: str, value):
         """Setzt einen D-Bus-Item-Wert."""
@@ -244,6 +286,7 @@ def main():
     log.info("VenusOS DBus MQTT Battery Bridge")
     log.info(f"  MQTT: {MQTT_HOST}:{MQTT_PORT} → {MQTT_TOPIC}")
     log.info(f"  DBus: {DBUS_SERVICE} / instance {DBUS_INSTANCE}")
+    log.info(f"  Modus: {'SmartShunt (SoC/Kap. vom SmartShunt)' if SMARTSHUNT_MODE else 'Standalone (SoC/Kap. vom JBD BMS)'}")
     log.info("=" * 50)
 
     bridge = DBusMqttBattery()
